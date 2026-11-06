@@ -123,6 +123,11 @@ details.preview textarea{margin-top:10px;min-height:240px;font-family:ui-monospa
 .linkbtn.danger{color:#C81E63}
 .hp{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
 .copyline{margin:12px 0 0;font-size:13.5px;color:var(--sec)}
+#done{margin-top:64px}
+.donebox h2{font-weight:500;font-size:clamp(28px,3.6vw,40px);line-height:1.08;letter-spacing:-.015em;color:var(--main);margin:10px 0 12px;text-wrap:balance}
+.donebox p{max-width:58ch}
+.redo{margin-top:8px;font-size:14px;color:var(--body)}
+#d-out{margin-top:18px;min-height:360px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:var(--body);background:#fff}
 .btn[disabled]{opacity:.55;cursor:default}
 
 /* Footer */
@@ -170,6 +175,25 @@ details.preview textarea{margin-top:10px;min-height:240px;font-family:ui-monospa
 </div>
 
 <main class="wrap">
+  <section id="done" hidden>
+    <div class="donebox">
+      <span class="label">Submitted</span>
+      <h2>Thanks, your answers are with us.</h2>
+      <p>We'll go through them and be in touch. <span id="done-when"></span></p>
+      <div class="actions">
+        <button class="btn ghost" id="d-view" type="button" aria-expanded="false">View your answers</button>
+        <button class="btn ghost" id="d-amend" type="button">Amend your answers</button>
+        <button class="btn ghost" id="d-redo" type="button">Start again</button>
+      </div>
+      <div class="status" id="done-status" role="status" aria-live="polite"></div>
+      <div id="redo-confirm" class="redo" hidden>This clears everything on this device so you can start a fresh form. What you've already sent to us stays with us. <button class="linkbtn danger" id="redo-yes" type="button">Yes, start again</button> <button class="linkbtn" id="redo-no" type="button">Cancel</button></div>
+      <div id="d-answers" hidden>
+        <textarea id="d-out" readonly aria-label="Your answers"></textarea>
+        <p class="copyline"><button class="linkbtn" id="d-copy" type="button">Copy your answers</button></p>
+      </div>
+    </div>
+  </section>
+
   <section id="you">
     <div class="sec-head">
       <span class="label">Before you start</span>
@@ -486,16 +510,15 @@ details.preview textarea{margin-top:10px;min-height:240px;font-family:ui-monospa
   var SUBMIT_URL='https://projects.thisisperiscope.com/f/iconic-scoping';
   var sub=document.getElementById('submit'); var sentOnce=false;
   sub.addEventListener('click',function(){
-    var done=ALL.filter(isDone).length;
     var body=JSON.stringify({name:(state.who.name||'').trim(),role:(state.who.role||'').trim(),answersText:summary(),answers:state.a,website:document.getElementById('website').value});
     sub.disabled=true; sub.textContent='Sending\u2026'; say('');
     fetch(SUBMIT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:body})
       .then(function(r){ return r.json().catch(function(){return {ok:false};}).then(function(j){ return {status:r.status,j:j}; }); })
       .then(function(res){
         if(res.j&&res.j.ok){
-          sentOnce=true; sub.textContent='Sent'; say('Thanks, your answers are with us ('+done+' of '+ALL.length+' answered). If you change anything, you can submit again.','ok');
-          try{ state.sentAt=new Date().toISOString(); localStorage.setItem(KEY,JSON.stringify(state)); }catch(e){}
-          setTimeout(function(){ sub.disabled=false; sub.textContent='Submit updated answers'; },4000);
+          sentOnce=true; sub.disabled=false; sub.textContent='Submit updated answers'; say('');
+          state.sentAt=new Date().toISOString(); try{ localStorage.setItem(KEY,JSON.stringify(state)); }catch(e){}
+          showDone(true);
         } else {
           sub.disabled=false; sub.textContent=sentOnce?'Submit updated answers':'Submit my answers';
           say(((res.j&&res.j.message)||"Your answers didn't send.")+' Your answers are still saved here.','warn');
@@ -526,15 +549,49 @@ details.preview textarea{margin-top:10px;min-height:240px;font-family:ui-monospa
     });
   });
 
+  var doneSec=document.getElementById('done'), formEls=[document.querySelector('.strip'),document.getElementById('you'),document.getElementById('parts'),document.getElementById('send')];
+  function fmtWhen(iso){ var d=new Date(iso); if(isNaN(d)) return ''; var days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], mons=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; var h=d.getHours(), m=('0'+d.getMinutes()).slice(-2), ap=h>=12?'pm':'am'; h=h%12||12; return 'Sent '+days[d.getDay()]+' '+d.getDate()+' '+mons[d.getMonth()]+' at '+h+':'+m+ap+'.'; }
+  function showDone(scroll){
+    formEls.forEach(function(e){ if(e) e.hidden=true; });
+    document.getElementById('done-when').textContent=state.sentAt?fmtWhen(state.sentAt):'';
+    document.getElementById('d-answers').hidden=true; document.getElementById('d-view').setAttribute('aria-expanded','false'); document.getElementById('d-view').textContent='View your answers';
+    document.getElementById('redo-confirm').hidden=true; document.getElementById('done-status').textContent='';
+    doneSec.hidden=false; if(scroll) doneSec.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  function showForm(){ doneSec.hidden=true; formEls.forEach(function(e){ if(e) e.hidden=false; }); refresh(); }
+  document.getElementById('d-view').addEventListener('click',function(){
+    var box=document.getElementById('d-answers'), open=box.hidden; box.hidden=!open;
+    this.setAttribute('aria-expanded',String(open)); this.textContent=open?'Hide your answers':'View your answers';
+    if(open) document.getElementById('d-out').value=summary();
+  });
+  document.getElementById('d-copy').addEventListener('click',function(){
+    var t=document.getElementById('d-out'); t.value=summary(); var ds=document.getElementById('done-status');
+    function fb(){ t.focus(); t.select(); ds.textContent='Selected. Press Ctrl+C (or Cmd+C on a Mac) to copy.'; ds.className='status warn'; }
+    try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t.value).then(function(){ ds.textContent='Copied to your clipboard.'; ds.className='status ok'; },fb); } else fb(); }catch(e){ fb(); }
+  });
+  document.getElementById('d-amend').addEventListener('click',function(){
+    showForm(); sub.textContent='Submit updated answers'; say('Make your changes, then press Submit updated answers at the bottom.');
+    document.getElementById('you').scrollIntoView({behavior:'smooth',block:'start'});
+  });
+  document.getElementById('d-redo').addEventListener('click',function(){ document.getElementById('redo-confirm').hidden=false; });
+  document.getElementById('redo-no').addEventListener('click',function(){ document.getElementById('redo-confirm').hidden=true; });
+  document.getElementById('redo-yes').addEventListener('click',function(){
+    state={who:{name:'',role:''},a:{}}; try{localStorage.removeItem(KEY);}catch(e){}
+    sentOnce=false; sub.textContent='Submit my answers'; say('');
+    render(); showForm(); document.getElementById('saved').textContent='Not saved yet';
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+
   var rc=document.getElementById('reset-confirm'), rb=document.getElementById('reset');
   rb.addEventListener('click',function(){ rc.hidden=false; rb.hidden=true; });
   document.getElementById('reset-no').addEventListener('click',function(){ rc.hidden=true; rb.hidden=false; });
   document.getElementById('reset-yes').addEventListener('click',function(){
     state={who:{name:'',role:''},a:{}}; try{localStorage.removeItem(KEY);}catch(e){}
-    rc.hidden=true; rb.hidden=false; render(); say('All answers cleared.'); document.getElementById('saved').textContent='Not saved yet';
+    rc.hidden=true; rb.hidden=false; sentOnce=false; sub.textContent='Submit my answers'; render(); say('All answers cleared.'); document.getElementById('saved').textContent='Not saved yet';
   });
 
   render();
+  if(state.sentAt){ sentOnce=true; sub.textContent='Submit updated answers'; showDone(false); }
 })();
 </script>
 </body></html>
