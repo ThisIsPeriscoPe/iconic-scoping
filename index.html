@@ -121,6 +121,9 @@ details.preview textarea{margin-top:10px;min-height:240px;font-family:ui-monospa
 .linkbtn{background:none;border:0;padding:0;font:inherit;color:var(--sec);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .linkbtn:hover{color:var(--main)}
 .linkbtn.danger{color:#C81E63}
+.hp{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
+.copyline{margin:12px 0 0;font-size:13.5px;color:var(--sec)}
+.btn[disabled]{opacity:.55;cursor:default}
 
 /* Footer */
 .foot{margin-top:80px;border-top:1px solid var(--rule)}
@@ -185,14 +188,16 @@ details.preview textarea{margin-top:10px;min-height:240px;font-family:ui-monospa
     <div class="send">
       <span class="label">All done</span>
       <h2>Send us your answers</h2>
-      <p>Copy your answers and paste them into a reply to our email. Anything you skipped shows as not answered, which is fine. We'll go through it with you on a call.</p>
+      <p>When you're ready, press Submit and your answers come straight to us. Anything you skipped shows as not answered, which is fine. We'll go through it with you on a call.</p>
+      <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input type="text" id="website" name="website" tabindex="-1" autocomplete="off"></div>
       <div class="actions">
-        <button class="btn" id="copy" type="button">Copy my answers</button>
+        <button class="btn" id="submit" type="button">Submit my answers</button>
         <button class="btn ghost" id="dl" type="button" hidden>Download as a text file</button>
       </div>
       <div class="status" id="send-status" role="status" aria-live="polite"></div>
       <details class="preview" id="preview">
         <summary>See what will be sent</summary>
+        <p class="copyline">You can also <button class="linkbtn" id="copy" type="button">copy your answers</button> to keep a copy or paste them into an email.</p>
         <textarea id="out" readonly aria-label="Your answers as text"></textarea>
       </details>
       <div class="reset">
@@ -473,9 +478,35 @@ details.preview textarea{margin-top:10px;min-height:240px;font-family:ui-monospa
     function fallback(){ pre.open=true; out.focus(); out.select(); say("Your browser blocked copying. The answers are selected below, so press Ctrl+C (or Cmd+C on a Mac) to copy them.",'warn'); }
     try{
       if(navigator.clipboard&&navigator.clipboard.writeText){
-        navigator.clipboard.writeText(txt).then(function(){ say('Copied. Paste them into a reply to our email.','ok'); },fallback);
+        navigator.clipboard.writeText(txt).then(function(){ say('Copied to your clipboard.','ok'); },fallback);
       } else fallback();
     }catch(e){ fallback(); }
+  });
+
+  var SUBMIT_URL='https://projects.thisisperiscope.com/f/iconic-scoping';
+  var sub=document.getElementById('submit'); var sentOnce=false;
+  sub.addEventListener('click',function(){
+    var done=ALL.filter(isDone).length;
+    var body=JSON.stringify({name:(state.who.name||'').trim(),role:(state.who.role||'').trim(),answersText:summary(),answers:state.a,website:document.getElementById('website').value});
+    sub.disabled=true; sub.textContent='Sending\u2026'; say('');
+    fetch(SUBMIT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:body})
+      .then(function(r){ return r.json().catch(function(){return {ok:false};}).then(function(j){ return {status:r.status,j:j}; }); })
+      .then(function(res){
+        if(res.j&&res.j.ok){
+          sentOnce=true; sub.textContent='Sent'; say('Thanks, your answers are with us ('+done+' of '+ALL.length+' answered). If you change anything, you can submit again.','ok');
+          try{ state.sentAt=new Date().toISOString(); localStorage.setItem(KEY,JSON.stringify(state)); }catch(e){}
+          setTimeout(function(){ sub.disabled=false; sub.textContent='Submit updated answers'; },4000);
+        } else {
+          sub.disabled=false; sub.textContent=sentOnce?'Submit updated answers':'Submit my answers';
+          say(((res.j&&res.j.message)||"Your answers didn't send.")+' Your answers are still saved here.','warn');
+          document.getElementById('preview').open=true;
+        }
+      })
+      .catch(function(){
+        sub.disabled=false; sub.textContent=sentOnce?'Submit updated answers':'Submit my answers';
+        say("Your answers didn't send. Check your internet connection and try again, or copy your answers below and email them to us. They're still saved here.",'warn');
+        document.getElementById('preview').open=true;
+      });
   });
 
   var dlBtn=document.getElementById('dl'); var downloads=null;
